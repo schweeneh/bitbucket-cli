@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from datetime import date
 
 import httpx
 
@@ -48,6 +49,24 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         choices=[state.value for state in PullRequestState],
         default=None,
         help="Filter pull requests by state. If omitted, returns all states.",
+    )
+    parser.add_argument(
+        "--created-after",
+        type=str,
+        default=None,
+        help=(
+            "Include only pull requests created on or after this date (inclusive). "
+            "Format: YYYY-MM-DD."
+        ),
+    )
+    parser.add_argument(
+        "--created-before",
+        type=str,
+        default=None,
+        help=(
+            "Include only pull requests created on or before this date (inclusive). "
+            "Format: YYYY-MM-DD."
+        ),
     )
     parser.add_argument(
         "--output",
@@ -98,13 +117,40 @@ def main() -> None:
     if args.state is not None:
         state_filter = PullRequestState(args.state)
 
-    # --- Step 3: Fetch pull requests from API ---
+    # --- Step 3: Parse optional created date range filters ---
+    created_after_date: date | None = None
+    if args.created_after is not None:
+        try:
+            created_after_date = date.fromisoformat(args.created_after)
+        except ValueError:
+            print(
+                f"Error: Invalid date format for --created-after: '{args.created_after}'. "
+                "Expected YYYY-MM-DD.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    created_before_date: date | None = None
+    if args.created_before is not None:
+        try:
+            created_before_date = date.fromisoformat(args.created_before)
+        except ValueError:
+            print(
+                f"Error: Invalid date format for --created-before: '{args.created_before}'. "
+                "Expected YYYY-MM-DD.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # --- Step 4: Fetch pull requests from API ---
     try:
         pull_request_resources = fetch_all_pull_requests(
             workspace=args.workspace,
             repo_slug=args.repo_slug,
             credentials=credentials,
             state=state_filter,
+            created_after=created_after_date,
+            created_before=created_before_date,
         )
     except BitbucketApiError as api_error:
         print(f"Error: {api_error}", file=sys.stderr)
@@ -116,19 +162,27 @@ def main() -> None:
         )
         sys.exit(1)
 
-    # --- Step 4: Transform API resources to flat CSV rows ---
+    # --- Step 5: Transform API resources to flat CSV rows ---
     csv_rows: list[PullRequestCsvRow] = [
         PullRequestCsvRow.from_api_resource(resource)
         for resource in pull_request_resources
     ]
 
-    # --- Step 5: Write CSV output ---
+    # --- Step 6: Write CSV output ---
     write_pull_requests_to_csv(rows=csv_rows, output_path=args.output)
 
-    # --- Step 6: Summary to stderr ---
-    state_description = f" {state_filter.value}" if state_filter is not None else ""
+    # --- Step 7: Summary to stderr ---
+    filter_parts: list[str] = []
+    if state_filter is not None:
+        filter_parts.append(f"state={state_filter.value}")
+    if created_after_date is not None:
+        filter_parts.append(f"created>={created_after_date.isoformat()}")
+    if created_before_date is not None:
+        filter_parts.append(f"created<={created_before_date.isoformat()}")
+
+    filter_description = f" ({', '.join(filter_parts)})" if filter_parts else ""
     print(
-        f"Exported {len(csv_rows)}{state_description} pull request(s).",
+        f"Exported {len(csv_rows)} pull request(s){filter_description}.",
         file=sys.stderr,
     )
 

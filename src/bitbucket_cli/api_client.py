@@ -13,6 +13,8 @@ pull requests endpoint.
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 import httpx
 
 from bitbucket_cli.auth import BitbucketCredentials
@@ -54,11 +56,51 @@ def _build_initial_url(workspace: str, repo_slug: str) -> str:
     return f"{BITBUCKET_API_BASE_URL}/repositories/{workspace}/{repo_slug}/pullrequests"
 
 
+def _build_created_date_query(
+    created_after: date | None,
+    created_before: date | None,
+) -> str | None:
+    """
+    Build a Bitbucket query language string for filtering PRs by created_on date.
+
+    Uses >= for created_after (inclusive of the start date) and < (next day)
+    for created_before so that the entire end date is included, since created_on
+    is a datetime with time-of-day precision.
+
+    Args:
+        created_after: Include PRs created on or after this date (inclusive).
+        created_before: Include PRs created on or before this date (inclusive of
+            the entire day).
+
+    Returns:
+        Query string for the Bitbucket API 'q' parameter, or None if no date
+        filters are specified.
+    """
+    query_clauses: list[str] = []
+
+    if created_after is not None:
+        query_clauses.append(f"created_on >= {created_after.isoformat()}")
+
+    if created_before is not None:
+        # Use "< next day" so that PRs created at any time on the end date
+        # are included. Without this, a naive "<= 2023-12-31" comparison
+        # would exclude PRs created after midnight on Dec 31.
+        day_after_created_before = created_before + timedelta(days=1)
+        query_clauses.append(f"created_on < {day_after_created_before.isoformat()}")
+
+    if not query_clauses:
+        return None
+
+    return " AND ".join(query_clauses)
+
+
 def fetch_all_pull_requests(
     workspace: str,
     repo_slug: str,
     credentials: BitbucketCredentials,
     state: PullRequestState | None = None,
+    created_after: date | None = None,
+    created_before: date | None = None,
 ) -> list[PullRequestResource]:
     """
     Fetch all pull requests from a Bitbucket Cloud repository, handling pagination.
@@ -75,6 +117,10 @@ def fetch_all_pull_requests(
         credentials: Authenticated Bitbucket credentials (email + API token).
         state: Optional filter for PR state (OPEN, MERGED, DECLINED, SUPERSEDED).
             When None, the API returns pull requests in all states.
+        created_after: Optional lower bound for PR creation date (inclusive).
+            Only PRs created on or after this date are returned.
+        created_before: Optional upper bound for PR creation date (inclusive).
+            Only PRs created on or before this date are returned.
 
     Returns:
         Complete list of PullRequestResource objects across all pages.
@@ -96,6 +142,10 @@ def fetch_all_pull_requests(
     query_params: dict[str, str] = {}
     if state is not None:
         query_params["state"] = state.value
+
+    created_date_query = _build_created_date_query(created_after, created_before)
+    if created_date_query is not None:
+        query_params["q"] = created_date_query
 
     initial_url = _build_initial_url(workspace, repo_slug)
 
