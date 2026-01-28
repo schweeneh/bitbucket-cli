@@ -1,6 +1,12 @@
 """
 HTTP client for the Bitbucket Cloud REST API v2.
 
+Authenticates using Bitbucket Cloud API tokens via HTTP Basic Auth,
+where the username is the Atlassian account email and the password
+is the API token.
+
+See: https://support.atlassian.com/bitbucket-cloud/docs/api-tokens/
+
 Handles authentication, pagination, and error translation for the
 pull requests endpoint.
 """
@@ -57,13 +63,16 @@ def fetch_all_pull_requests(
     """
     Fetch all pull requests from a Bitbucket Cloud repository, handling pagination.
 
+    Authenticates via HTTP Basic Auth using the Atlassian account email
+    and API token from the provided credentials.
+
     Iterates through all pages by following the 'next' URL in each paginated
     response until no more pages remain.
 
     Args:
         workspace: Bitbucket workspace slug.
         repo_slug: Repository slug.
-        credentials: Authenticated Bitbucket credentials.
+        credentials: Authenticated Bitbucket credentials (email + API token).
         state: Optional filter for PR state (OPEN, MERGED, DECLINED, SUPERSEDED).
             When None, the API returns pull requests in all states.
 
@@ -77,9 +86,11 @@ def fetch_all_pull_requests(
     """
     all_pull_requests: list[PullRequestResource] = []
 
+    # Bitbucket Cloud API tokens authenticate via HTTP Basic Auth:
+    # username = Atlassian account email, password = API token.
     auth = httpx.BasicAuth(
-        username=credentials.username,
-        password=credentials.app_password,
+        username=credentials.email,
+        password=credentials.api_token,
     )
 
     query_params: dict[str, str] = {}

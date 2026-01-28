@@ -80,7 +80,10 @@ class PullRequestResource(BaseModel):
     GET /2.0/repositories/{workspace}/{repo_slug}/pullrequests
     """
 
-    model_config = ConfigDict(strict=True)
+    # strict=False (default) is required here because this model is parsed from
+    # JSON via response.json(), which produces plain strings for datetime and enum
+    # fields. Strict mode would reject those strings, demanding actual datetime
+    # instances and PullRequestState enum instances instead.
 
     id: int
     title: str

@@ -4,6 +4,9 @@ CLI entrypoint for the Bitbucket Cloud PR CSV Exporter.
 Parses command-line arguments, resolves credentials, fetches pull requests
 from the Bitbucket Cloud API, transforms them to flat CSV rows, and writes
 the output to a file or stdout.
+
+Authentication uses Bitbucket Cloud API tokens (email + token) via HTTP Basic Auth.
+See: https://support.atlassian.com/bitbucket-cloud/docs/api-tokens/
 """
 
 from __future__ import annotations
@@ -54,16 +57,16 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         help="Output file path for CSV. If omitted, writes to stdout.",
     )
     parser.add_argument(
-        "--username",
+        "--email",
         type=str,
         default=None,
-        help="Bitbucket username. Overrides BITBUCKET_USERNAME env var.",
+        help="Atlassian account email. Overrides BITBUCKET_EMAIL env var.",
     )
     parser.add_argument(
-        "--app-password",
+        "--api-token",
         type=str,
         default=None,
-        help="Bitbucket app password. Overrides BITBUCKET_APP_PASSWORD env var.",
+        help="Bitbucket API token. Overrides BITBUCKET_API_TOKEN env var.",
     )
 
     return parser
@@ -83,8 +86,8 @@ def main() -> None:
     # --- Step 1: Resolve credentials ---
     try:
         credentials = resolve_credentials(
-            cli_username=args.username,
-            cli_app_password=args.app_password,
+            cli_email=args.email,
+            cli_api_token=args.api_token,
         )
     except CredentialError as credential_error:
         print(f"Error: {credential_error}", file=sys.stderr)
