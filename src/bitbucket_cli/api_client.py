@@ -101,6 +101,7 @@ def fetch_all_pull_requests(
     state: PullRequestState | None = None,
     created_after: date | None = None,
     created_before: date | None = None,
+    destination_branch: str | None = None,
 ) -> list[PullRequestResource]:
     """
     Fetch all pull requests from a Bitbucket Cloud repository, handling pagination.
@@ -121,6 +122,9 @@ def fetch_all_pull_requests(
             Only PRs created on or after this date are returned.
         created_before: Optional upper bound for PR creation date (inclusive).
             Only PRs created on or before this date are returned.
+        destination_branch: Optional destination branch name to filter by
+            (e.g., "main"). When provided, only PRs targeting this branch
+            are returned.
 
     Returns:
         Complete list of PullRequestResource objects across all pages.
@@ -143,9 +147,19 @@ def fetch_all_pull_requests(
     if state is not None:
         query_params["state"] = state.value
 
+    # Build the 'q' query parameter by combining all query-language clauses.
+    # The Bitbucket query language uses AND to combine multiple filter clauses.
+    query_clauses: list[str] = []
+
     created_date_query = _build_created_date_query(created_after, created_before)
     if created_date_query is not None:
-        query_params["q"] = created_date_query
+        query_clauses.append(created_date_query)
+
+    if destination_branch is not None:
+        query_clauses.append(f'destination.branch.name = "{destination_branch}"')
+
+    if query_clauses:
+        query_params["q"] = " AND ".join(query_clauses)
 
     initial_url = _build_initial_url(workspace, repo_slug)
 
@@ -174,5 +188,24 @@ def fetch_all_pull_requests(
 
             all_pull_requests.extend(paginated_response.values)
             next_url = paginated_response.next
+
+    # Defensive client-side filtering: the Bitbucket API may not consistently
+    # apply filters across paginated responses (query params are only sent on
+    # the initial request; subsequent pages use the 'next' URL from the API,
+    # which may not preserve filters). Re-filter here to guarantee correctness.
+    if state is not None:
+        all_pull_requests = [
+            pull_request
+            for pull_request in all_pull_requests
+            if pull_request.state == state
+        ]
+
+    if destination_branch is not None:
+        all_pull_requests = [
+            pull_request
+            for pull_request in all_pull_requests
+            if pull_request.destination.branch is not None
+            and pull_request.destination.branch.name == destination_branch
+        ]
 
     return all_pull_requests

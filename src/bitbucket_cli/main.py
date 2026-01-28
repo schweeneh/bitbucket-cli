@@ -69,6 +69,15 @@ def _build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--destination-branch",
+        type=str,
+        default=None,
+        help=(
+            "Filter pull requests by destination branch name (e.g., 'main'). "
+            "Only pull requests targeting this branch are returned."
+        ),
+    )
+    parser.add_argument(
         "--output",
         "-o",
         type=str,
@@ -151,6 +160,7 @@ def main() -> None:
             state=state_filter,
             created_after=created_after_date,
             created_before=created_before_date,
+            destination_branch=args.destination_branch,
         )
     except BitbucketApiError as api_error:
         print(f"Error: {api_error}", file=sys.stderr)
@@ -175,6 +185,8 @@ def main() -> None:
     filter_parts: list[str] = []
     if state_filter is not None:
         filter_parts.append(f"state={state_filter.value}")
+    if args.destination_branch is not None:
+        filter_parts.append(f"destination={args.destination_branch}")
     if created_after_date is not None:
         filter_parts.append(f"created>={created_after_date.isoformat()}")
     if created_before_date is not None:
